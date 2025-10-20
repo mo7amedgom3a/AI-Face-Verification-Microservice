@@ -1,7 +1,10 @@
-FROM node:lts-alpine
+FROM node:lts-slim 
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
+RUN npx prisma generate
+
 EXPOSE 3000
-CMD ["npm", "start"]
+# Run database migrations before starting the server
+CMD ["sh", "-c", "npx prisma migrate deploy && npm start"]

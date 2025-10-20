@@ -1,12 +1,13 @@
 const express = require("express");
 const multer = require("multer");
-const { encodeFace, getFaceById } = require("../controllers/faceController");
+const { encodeFace, getFaceById, compareFace } = require("../controllers/faceController");
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
-// POST /api/face/encode - Upload face image with field name "image"
-router.post("/encode", upload.single("image"), encodeFace);
 router.get("/user/:id", getFaceById);
+router.post("/encode", upload.single("image"), encodeFace);
+router.post("/compare/:id", upload.single("image"), compareFace);
+
 
 module.exports = router;

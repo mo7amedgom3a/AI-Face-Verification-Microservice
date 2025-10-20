@@ -16,22 +16,12 @@ app.use(express.urlencoded({ extended: true }));
 	await loadModel();
 })();
 
-// Routes
-app.get('/hello', (req, res) => {
-	res.send('hello world');
-});
-
-app.get('/health/db', async (req, res) => {
-	try {
-		await prisma.$queryRaw`SELECT 1`;
-		res.json({ status: 'ok' });
-	} catch (err) {
-		res.status(503).json({ status: 'error', error: err.message });
-	}
-});
 
 app.use("/api/face", faceRoutes);
-
+// health check endpoint
+app.get('/health', (req, res) => {
+	res.status(200).send('OK');
+});
 // Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

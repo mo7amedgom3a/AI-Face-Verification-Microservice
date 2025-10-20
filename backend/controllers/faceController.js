@@ -1,7 +1,7 @@
 const { generateEmbedding } = require("../services/faceService");
 const { normalizeVector } = require("../utils/cosineSimilarity");
 const { saveEmbedding, getEmbeddingById } = require("../repositories/faceRepository");
-
+const { cosineSimilarity } = require("../utils/cosineSimilarity");
 
 exports.encodeFace = async (req, res) => {
   try {
@@ -45,5 +45,39 @@ exports.getFaceById = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(400).json({ success: false, error: "Failed to retrieve face data" });
+  }
+};
+
+exports.compareFace = async (req, res) => {
+  try {
+    const userId = req.params.id;
+    console.log("Comparing face for user ID:", userId);
+    const imageBuffer = req.file.buffer;
+
+    const user = await getEmbeddingById(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, error: "User not found" });
+    }
+    
+    // Generate and normalize the new embedding (same as in encodeFace)
+    const newEmbedding = await generateEmbedding(imageBuffer);
+    const normalizedNew = normalizeVector(newEmbedding);
+    
+    // Both embeddings should be normalized before comparison
+    const similarity = cosineSimilarity(normalizedNew, user.embedding);
+    const threshold = 0.6; // Adjust threshold as needed (0.6-0.7 is common for face recognition)
+    const is_match = similarity > threshold;
+    
+    console.log(`Similarity: ${similarity.toFixed(4)}, Match: ${is_match}, Threshold: ${threshold}`);
+    
+    return res.status(200).json({
+      success: true,
+      similarity: parseFloat(similarity.toFixed(4)),
+      is_match: is_match,
+      threshold: threshold,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(400).json({ success: false, error: "Failed to compare faces" });
   }
 };
