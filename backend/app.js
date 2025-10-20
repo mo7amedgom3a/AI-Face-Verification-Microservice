@@ -2,21 +2,27 @@ require('dotenv').config();
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const { loadModel } = require("./utils/model");
+const faceRoutes = require("./routes/faceRoutes");
 
 const app = express();
 const prisma = new PrismaClient();
 
+// Middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Initialize model
 (async () => {
-  await loadModel();
+	await loadModel();
 })();
 
+// Routes
 app.get('/hello', (req, res) => {
 	res.send('hello world');
 });
 
 app.get('/health/db', async (req, res) => {
 	try {
-		// Simple no-op query to verify connectivity
 		await prisma.$queryRaw`SELECT 1`;
 		res.json({ status: 'ok' });
 	} catch (err) {
@@ -24,6 +30,9 @@ app.get('/health/db', async (req, res) => {
 	}
 });
 
+app.use("/api/face", faceRoutes);
+
+// Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
 	console.log(`Server listening on port ${PORT}`);
@@ -40,4 +49,3 @@ const shutdown = async () => {
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
-

@@ -6,10 +6,10 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
-
-// No models required for connectivity health check; add models here as needed.
 model User {
   id    Int     @id @default(autoincrement())
   email String  @unique
   name  String?
+  embedding Json
+  createdAt DateTime @default(now())
 }
