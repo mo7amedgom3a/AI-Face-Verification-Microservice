@@ -3,3 +3,6 @@ node_modules/
 npm-debug.log
 .DS_Store
 .vscode/
+
+# ONNX models (too large for git)
+models/*.onnx

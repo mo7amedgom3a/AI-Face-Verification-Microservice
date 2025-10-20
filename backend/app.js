@@ -1,9 +1,14 @@
 require('dotenv').config();
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
+const { loadModel } = require("./utils/model");
 
 const app = express();
 const prisma = new PrismaClient();
+
+(async () => {
+  await loadModel();
+})();
 
 app.get('/hello', (req, res) => {
 	res.send('hello world');
