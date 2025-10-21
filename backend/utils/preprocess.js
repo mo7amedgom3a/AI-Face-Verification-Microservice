@@ -1,33 +1,50 @@
 const sharp = require("sharp");
 const ort = require("onnxruntime-node");
 
+/**
+ * Preprocess image for ArcFace model
+ * Uses HWC format: [1, 112, 112, 3] as expected by this specific model
+ */
 async function preprocessImage(imageBuffer) {
-  // Resize and get raw pixel data
-  const img = await sharp(imageBuffer)
-    .resize(112, 112)
-    .removeAlpha()
-    .raw()
-    .toBuffer();
+  try {
+    // Resize and convert to RGB
+    const processedBuffer = await sharp(imageBuffer)
+      .resize(112, 112, {
+        fit: 'cover',
+        position: 'center'
+      })
+      .removeAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
 
-  // Normalize pixel values from [0, 255] to [0, 1] or apply mean/std normalization
-  // Most face recognition models expect normalized inputs
-  const floatArray = new Float32Array(img.length);
-  
-  // Normalize to [0, 1] range
-  for (let i = 0; i < img.length; i++) {
-    floatArray[i] = img[i] / 255.0;
+    const { data, info } = processedBuffer;
+
+    // Verify dimensions
+    if (info.width !== 112 || info.height !== 112 || info.channels !== 3) {
+      throw new Error(`Invalid image dimensions: ${info.width}x${info.height}x${info.channels}`);
+    }
+
+    console.log(`📸 Image info: ${info.width}x${info.height}x${info.channels}`);
+
+    // Create Float32Array - Sharp gives us HWC format already
+    const imageData = new Float32Array(112 * 112 * 3);
+    
+    // Normalize pixels to [-1, 1] range
+    // Keep HWC format (Height, Width, Channels)
+    for (let i = 0; i < data.length; i++) {
+      imageData[i] = (data[i] / 255.0 - 0.5) / 0.5;
+    }
+
+    // Create ONNX tensor with HWC format [1, 112, 112, 3]
+    const tensor = new ort.Tensor("float32", imageData, [1, 112, 112, 3]);
+    
+    console.log(`✅ Preprocessed image: shape=[1, 112, 112, 3], length=${imageData.length}`);
+    
+    return tensor;
+  } catch (error) {
+    console.error('❌ Image preprocessing error:', error);
+    throw new Error(`Failed to preprocess image: ${error.message}`);
   }
-  
-  // Alternative: If model expects mean-centered normalization, use:
-  // const mean = [0.5, 0.5, 0.5];
-  // const std = [0.5, 0.5, 0.5];
-  // for (let i = 0; i < img.length; i++) {
-  //   const channelIdx = i % 3;
-  //   floatArray[i] = (img[i] / 255.0 - mean[channelIdx]) / std[channelIdx];
-  // }
-
-  const tensor = new ort.Tensor("float32", floatArray, [1, 112, 112, 3]);
-  return tensor;
 }
 
 module.exports = { preprocessImage };

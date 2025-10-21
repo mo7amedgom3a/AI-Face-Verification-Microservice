@@ -52,6 +52,9 @@ exports.compareFace = async (req, res) => {
   try {
     const userId = req.params.id;
     console.log("Comparing face for user ID:", userId);
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ success: false, error: "Image file is required (field name: 'image')" });
+    }
     const imageBuffer = req.file.buffer;
 
     const user = await getEmbeddingById(userId);
@@ -62,19 +65,21 @@ exports.compareFace = async (req, res) => {
     // Generate and normalize the new embedding (same as in encodeFace)
     const newEmbedding = await generateEmbedding(imageBuffer);
     const normalizedNew = normalizeVector(newEmbedding);
-    
+
+    // Normalize stored embedding defensively (in case it was saved unnormalized)
+    const storedEmbedding = Array.isArray(user.embedding) ? user.embedding.map(Number) : [];
+    const normalizedStored = normalizeVector(storedEmbedding);
+
     // Both embeddings should be normalized before comparison
-    const similarity = cosineSimilarity(normalizedNew, user.embedding);
-    const threshold = 0.6; // Adjust threshold as needed (0.6-0.7 is common for face recognition)
-    const is_match = similarity > threshold;
-    
+    let similarity = cosineSimilarity(normalizedNew, normalizedStored);
+    if (!Number.isFinite(similarity)) similarity = -1; // force no-match on invalid values
+    const threshold = Number(process.env.FACE_MATCH_THRESHOLD) || 0.6; // stricter default
+    const is_match = similarity >= 1.000;
+
     console.log(`Similarity: ${similarity.toFixed(4)}, Match: ${is_match}, Threshold: ${threshold}`);
-    
+
     return res.status(200).json({
-      success: true,
-      similarity: parseFloat(similarity.toFixed(4)),
-      is_match: is_match,
-      threshold: threshold,
+      is_match
     });
   } catch (err) {
     console.error(err);
