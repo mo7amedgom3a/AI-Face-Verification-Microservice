@@ -8,10 +8,10 @@ services:
     restart: always
     environment:
       POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
+      POSTGRES_PASSWORD: 2003
       POSTGRES_DB: face_db
     ports:
-      - "5433:5432"  # expose port 5433 on host to access locally
+      - "5432:5432"  
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -31,7 +31,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      DATABASE_URL: postgresql://user:password@db:5432/face_db?schema=public
+      DATABASE_URL: postgresql://user:2003@db:5432/face_db?schema=public
       PORT: 3000
     command: sh -c "npx prisma migrate deploy && npm start"
 
