@@ -2,38 +2,73 @@ const { generateEmbedding } = require("../services/faceService");
 const { normalizeVector } = require("../utils/cosineSimilarity");
 const { saveEmbedding, getEmbeddingById } = require("../repositories/faceRepository");
 const { cosineSimilarity } = require("../utils/cosineSimilarity");
+const { ValidationError, FileUploadError, ModelError, FaceDetectionError, DatabaseError } = require('../utils/errors');
 
-exports.encodeFace = async (req, res) => {
+exports.encodeFace = async (req, res, next) => {
   try {
-    const name = req.body.name || "testuser"; // Get name from request body or use default
+    if (!req.file || !req.file.buffer) {
+      throw new FileUploadError("Image file is required (field name: 'image')");
+    }
+
+    const name = req.body.name;
+    if (!name || typeof name !== 'string' || name.trim().length === 0) {
+      throw new ValidationError("Valid name is required");
+    }
+
     const imageBuffer = req.file.buffer;
 
     // Generate & normalize embedding
-    const embedding = await generateEmbedding(imageBuffer);
+    let embedding;
+    try {
+      embedding = await generateEmbedding(imageBuffer);
+    } catch (error) {
+      throw new FaceDetectionError("Failed to detect or process face in the image");
+    }
+
+    if (!Array.isArray(embedding) || embedding.length === 0) {
+      throw new ModelError("Failed to generate face embedding");
+    }
+
     const normalized = normalizeVector(embedding);
 
     // Save to DB
-    const user = await saveEmbedding(name, normalized);
+    let user;
+    try {
+      user = await saveEmbedding(name.trim(), normalized);
+    } catch (error) {
+      throw new DatabaseError("Failed to save face embedding");
+    }
 
     res.status(200).json({
       success: true,
       userId: user.id,
+      name: user.name,
       embeddingLength: normalized.length,
     });
   } catch (err) {
-    console.error(err);
-    res.status(400).json({ success: false, error: "Failed to encode face" });
+    next(err);
   }
 };
-exports.getFaceById = async (req, res) => {
+exports.getFaceById = async (req, res, next) => {
   try {
-    console.log("Fetching user with ID:", req.params.id);
     const userId = req.params.id;
-    const user = await getEmbeddingById(userId);
-    console.log("Retrieved user:", user);
+    if (!userId || typeof userId !== 'string') {
+      throw new ValidationError("Valid user ID is required");
+    }
+
+    let user;
+    try {
+      user = await getEmbeddingById(userId);
+    } catch (error) {
+      throw new DatabaseError("Failed to retrieve user data");
+    }
 
     if (!user) {
-      return res.status(404).json({ success: false, error: "User not found" });
+      throw new ValidationError("User not found", 404);
+    }
+
+    if (!Array.isArray(user.embedding) || user.embedding.length === 0) {
+      throw new ModelError("Invalid embedding data found");
     }
 
     return res.status(200).json({
@@ -43,46 +78,73 @@ exports.getFaceById = async (req, res) => {
       embeddingLength: user.embedding.length,
     });
   } catch (err) {
-    console.error(err);
-    res.status(400).json({ success: false, error: "Failed to retrieve face data" });
+    next(err);
   }
 };
 
-exports.compareFace = async (req, res) => {
+exports.compareFace = async (req, res, next) => {
   try {
     const userId = req.params.id;
-    console.log("Comparing face for user ID:", userId);
+    if (!userId || typeof userId !== 'string') {
+      throw new ValidationError("Valid user ID is required");
+    }
+
     if (!req.file || !req.file.buffer) {
-      return res.status(400).json({ success: false, error: "Image file is required (field name: 'image')" });
+      throw new FileUploadError("Image file is required (field name: 'image')");
     }
-    const imageBuffer = req.file.buffer;
 
-    const user = await getEmbeddingById(userId);
+    let user;
+    try {
+      user = await getEmbeddingById(userId);
+    } catch (error) {
+      throw new DatabaseError("Failed to retrieve user data");
+    }
+
     if (!user) {
-      return res.status(404).json({ success: false, error: "User not found" });
+      throw new ValidationError("User not found", 404);
     }
-    
-    // Generate and normalize the new embedding (same as in encodeFace)
-    const newEmbedding = await generateEmbedding(imageBuffer);
-    const normalizedNew = normalizeVector(newEmbedding);
 
-    // Normalize stored embedding defensively (in case it was saved unnormalized)
+    if (!Array.isArray(user.embedding) || user.embedding.length === 0) {
+      throw new ModelError("Invalid stored embedding data");
+    }
+
+    // Generate and normalize the new embedding
+    let newEmbedding;
+    try {
+      newEmbedding = await generateEmbedding(req.file.buffer);
+    } catch (error) {
+      throw new FaceDetectionError("Failed to detect or process face in the uploaded image");
+    }
+
+    if (!Array.isArray(newEmbedding) || newEmbedding.length === 0) {
+      throw new ModelError("Failed to generate face embedding");
+    }
+
+    // Ensure both embeddings are properly normalized
+    const normalizedNew = normalizeVector(newEmbedding);
     const storedEmbedding = Array.isArray(user.embedding) ? user.embedding.map(Number) : [];
     const normalizedStored = normalizeVector(storedEmbedding);
 
-    // Both embeddings should be normalized before comparison
-    let similarity = cosineSimilarity(normalizedNew, normalizedStored);
-    if (!Number.isFinite(similarity)) similarity = -1; // force no-match on invalid values
-    const threshold = Number(process.env.FACE_MATCH_THRESHOLD) || 0.6; // stricter default
-    const is_match = similarity >= 1.000;
+    if (normalizedNew.length !== normalizedStored.length) {
+      throw new ModelError("Embedding dimension mismatch");
+    }
 
-    console.log(`Similarity: ${similarity.toFixed(4)}, Match: ${is_match}, Threshold: ${threshold}`);
+    // Calculate similarity with validation
+    let similarity = cosineSimilarity(normalizedNew, normalizedStored);
+    if (!Number.isFinite(similarity)) {
+      throw new ModelError("Invalid similarity calculation result");
+    }
+
+    const threshold = Number(process.env.FACE_MATCH_THRESHOLD) || 1.000;
+    const is_match = similarity >= threshold;
 
     return res.status(200).json({
-      is_match
+      success: true,
+      is_match,
+      similarity: parseFloat(similarity.toFixed(4)),
+      threshold
     });
   } catch (err) {
-    console.error(err);
-    return res.status(400).json({ success: false, error: "Failed to compare faces" });
+    next(err);
   }
 };

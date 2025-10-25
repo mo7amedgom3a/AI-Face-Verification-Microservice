@@ -31,9 +31,12 @@ async function preprocessImage(imageBuffer) {
     
     // Normalize pixels to [-1, 1] range
     // Keep HWC format (Height, Width, Channels)
+    const mean = [0.5, 0.5, 0.5];
+    const std = [0.5, 0.5, 0.5];
     for (let i = 0; i < data.length; i++) {
-      imageData[i] = (data[i] / 255.0 - 0.5) / 0.5;
-    }
+      const c = i % 3;
+      imageData[i] = ((data[i] / 255.0) - mean[c]) / std[c];
+  }
 
     // Create ONNX tensor with HWC format [1, 112, 112, 3]
     const tensor = new ort.Tensor("float32", imageData, [1, 112, 112, 3]);
